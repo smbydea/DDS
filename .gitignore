@@ -1,0 +1,56 @@
+﻿# Build outputs
+build/
+Debug/
+Release/
+bin/
+obj/
+out/
+*.o
+*.obj
+*.d
+*.dep
+*.elf
+*.hex
+*.bin
+*.map
+*.lst
+*.su
+*.cyclo
+*.dis
+*.axf
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+Makefile
+build.ninja
+rules.ninja
+.ninja_deps
+.ninja_log
+
+# STM32CubeMX / STM32CubeIDE local generated state
+mx.scratch/
+.metadata/
+.settings/
+.recommenders/
+*.launch
+*.log
+
+# Keep useful VS Code debug/intellisense files, ignore local machine settings
+.vscode/*
+!.vscode/launch.json
+!.vscode/c_cpp_properties.json
+
+# Editor and OS noise
+.idea/
+*.swp
+*.swo
+*~
+Thumbs.db
+Desktop.ini
+
+# Local agent/plugin state
+.agents/
+.codex/
