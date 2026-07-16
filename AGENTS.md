@@ -1,253 +1,101 @@
-﻿# AGENTS.md - OutputCMake 项目协作说明
-
-## 你的身份与目标
-
-用户是一名正在备赛全国大学生电子设计竞赛的学生，已经有一定单片机基础。后续在本工程中协作时，要把回答和代码都面向“比赛现场能快速复用、能看懂、能改动、能排故”的目标来写。
-
-写代码时不要只给能跑的最短代码，而要兼顾：
-
-- 结构清晰，便于比赛时快速定位问题。
-- 注释充分，解释关键寄存器、外设配置、时序、参数含义和易错点。
-- 模块化，尽量把外设驱动、应用逻辑、参数配置拆开。
-- 可直接调用，常用功能要封装成简单函数，例如“一行函数输出指定频率和波形”。
-- 保留 CubeMX 生成代码的 `USER CODE BEGIN/END` 区域规则，避免重新生成工程后丢失用户代码。
-
-## 当前工程概览
-
-本目录是一个 STM32CubeMX/CMake 生成的 STM32F429 工程，工程名为 `OutputCMake`。
-
-主要特点：
-
-- MCU：`STM32F429xx`。
-- 框架：STM32 HAL。
-- 构建系统：CMake + Ninja。
-- 工具链：`gcc-arm-none-eabi`，由 STM32CubeIDE 安装目录提供。
-- 当前使用外设：`SPI1`、`GPIOA`。
-- 当前重点模块：AD9833 DDS 信号发生器驱动。
-
-## 关键文件
-
-- `Core/Src/main.c`：主程序入口，包含系统初始化、GPIO 初始化、SPI1 初始化；当前已通过 `Output_Init()` 和 `Output_SetWave()` 调用封装后的输出模块。
-- `Core/Inc/main.h`：主程序头文件，定义了 `AD9833_CS_Pin` 和 `AD9833_CS_GPIO_Port`。
-- `Core/Src/ad9833.c`：AD9833 底层驱动实现，负责 SPI 写控制字、频率字、相位字；保持为通用驱动，不直接绑定具体板子。
-- `Core/Inc/ad9833.h`：AD9833 底层驱动公开接口和类型定义。
-- `Core/Src/stm32f4xx_hal_msp.c`：HAL MSP 初始化，当前配置 SPI1 的 GPIO 复用引脚。
-- `Core/Src/stm32f4xx_it.c`：中断处理文件，目前只有基础 Cortex-M 异常和 SysTick。
-- `CMakeLists.txt`：顶层 CMake 文件，当前已将 `Core/Src/ad9833.c` 和 `Core/Src/Output.c` 加入编译。
-- `cmake/stm32cubemx/CMakeLists.txt`：CubeMX 生成的源文件、HAL 驱动和 include 路径配置。
-- `CMakePresets.json`：Debug/Release 构建预设。
-- `.vscode/launch.json`：ST-Link GDB Server 调试配置。
-- `.clangd`：clangd 使用 `build/Release` 下的编译数据库。
-- `Core/Src/Output.c`：比赛应用层输出模块，绑定当前板子的 `SPI1 + PA4 + 25 MHz MCLK`，封装正弦波/三角波输出、频率设置、相位设置和停止输出。
-- `Core/Src/Output.h`：Output 模块公开接口，`main.c` 和比赛代码优先包含这个头文件。
-
-## 当前硬件连接与外设配置
-
-AD9833 当前连接假设：
-
-- `AD9833_CS` 或 `FSYNC`：`PA4`，在 `main.h` 中定义为 `AD9833_CS_Pin` 和 `AD9833_CS_GPIO_Port`。
-- `SPI1_SCK`：`PA5`。
-- `SPI1_MOSI`：`PA7`。
-- 当前未使用 `MISO`，但 `main.c` 中 SPI1 配置为 `SPI_DIRECTION_2LINES`。
-- AD9833 MCLK 当前代码按 `25000000UL` 处理，即 25 MHz。
-
-`main.c` 中 SPI1 当前配置：
-
-- Master 模式。
-- 8-bit 数据宽度。
-- 软件 NSS。
-- MSB first。
-- BaudRatePrescaler 为 `SPI_BAUDRATEPRESCALER_16`。
-- CPOL 当前为 `SPI_POLARITY_HIGH`。
-- CPHA 当前为 `SPI_PHASE_1EDGE`。
-
-注意：AD9833 常见配置多使用 SPI Mode 2 或兼容时序，具体 CPOL/CPHA 要以实际模块和示波器波形为准。修改 SPI 时序时，要在注释里说明为什么改，并建议用逻辑分析仪或示波器确认 `SCLK`、`MOSI`、`FSYNC`。
-
-## 当前 AD9833 / Output 代码状态
-
-当前已经完成 AD9833 输出逻辑的模块化封装：
-
-- `ad9833.c/.h` 保持为底层通用驱动，只负责 AD9833 寄存器和 SPI 通信。
-- `Output.c/.h` 是比赛应用层模块，绑定当前板子的 `hspi1`、`AD9833_CS_GPIO_Port`、`AD9833_CS_Pin` 和 25 MHz MCLK。
-- `main.c` 不再直接调用一长串 `AD9833_Init`、`AD9833_SetFrequency`、`AD9833_SetPhase`、`AD9833_Start`，而是在 `USER CODE BEGIN 2` 中调用 `Output_Init()` 和 `Output_SetWave()`。
-- `CMakeLists.txt` 已把 `Core/Src/Output.c` 加入编译。
-- 已执行 `cmake --build --preset Debug`，Debug 构建通过，生成 `OutputCMake.elf`。
-
-当前 `main.c` 示例输出：
-
-```c
-if (Output_Init() != HAL_OK)
-{
-  Error_Handler();
-}
-if (Output_SetWave(OUTPUT_WAVE_SINE, 20000.0, 0.0) != HAL_OK)
-{
-  Error_Handler();
-}
-```
-
-比赛现场优先使用这些接口：
-
-```c
-HAL_StatusTypeDef Output_Init(void);
-HAL_StatusTypeDef Output_SetWave(Output_Waveform waveform, double frequency_hz, double phase_deg);
-HAL_StatusTypeDef Output_Sine(double frequency_hz, double phase_deg);
-HAL_StatusTypeDef Output_Triangle(double frequency_hz, double phase_deg);
-HAL_StatusTypeDef Output_SetPhase(double phase_deg);
-HAL_StatusTypeDef Output_Stop(void);
-```
-
-典型调用方式：
-
-```c
-Output_Init();
-Output_SetWave(OUTPUT_WAVE_SINE, 20000.0, 0.0);      // 正弦波，20 kHz，0 度相位
-Output_SetWave(OUTPUT_WAVE_TRIANGLE, 1000.0, 90.0);  // 三角波，1 kHz，90 度相位
-
-Output_Sine(20000.0, 0.0);                           // 快捷正弦波接口
-Output_Triangle(1000.0, 90.0);                       // 快捷三角波接口
-```
-
-`Output.c` 中当前集中管理的比赛常改参数：
-
-```c
-#define OUTPUT_AD9833_MCLK_HZ        25000000UL
-#define OUTPUT_DEFAULT_FREQ_HZ       20000.0
-#define OUTPUT_DEFAULT_PHASE_DEG     0.0
-```
-
-如果 AD9833 模块实际晶振不是 25 MHz，优先修改 `OUTPUT_AD9833_MCLK_HZ`。
-
-## 代码风格要求
-
-后续写 C 代码时，遵守以下约定：
-
-- 使用 STM32 HAL 风格，返回值尽量使用 `HAL_StatusTypeDef`。
-- 外设初始化失败时不要静默忽略，要返回错误或进入 `Error_Handler()`。
-- 关键参数必须检查范围，例如频率不能为负，不能超过 AD9833 理论上限 `MCLK / 2`。
-- 对比赛常改参数使用宏集中管理，例如：
-
-```c
-#define AD9833_MCLK_HZ        25000000UL
-#define DDS_DEFAULT_FREQ_HZ   20000.0
-#define DDS_DEFAULT_PHASE_DEG 0.0
-```
-
-- 不要把大量业务逻辑堆在 `while (1)` 或 `USER CODE BEGIN 2` 中。
-- 尽量让 `main.c` 只负责系统启动和调度，把外设细节放到模块文件里。
-- 保留 CubeMX 的自动生成结构，只在 `USER CODE` 区域内增加代码，除非用户明确要求重构生成区外的代码。
-- 新增模块时同步修改 CMake，把 `.c` 文件加入 `target_sources` 或合适的 CubeMX/CMake 源文件列表。
-
-## 注释要求
-
-用户希望在学习和备赛过程中能看懂代码，所以注释要比普通工程更详细，但不要写废话。
-
-应该重点注释：
-
-- 每个模块文件开头说明模块用途、硬件依赖、使用步骤。
-- 每个对外函数说明功能、参数、返回值、典型调用场景。
-- AD9833 频率字计算公式：`freq_word = frequency_hz * 2^28 / mclk_hz`。
-- AD9833 相位字计算公式：`phase_word = phase_deg * 4096 / 360`。
-- `FSYNC` 为什么要手动拉低/拉高。
-- SPI CPOL/CPHA、片选时序、MCLK、输出幅度偏置等调试易错点。
-- 比赛现场可能要改的地方，比如频率、波形、引脚、MCLK。
-
-避免这类无效注释：
-
-```c
-// i 加 1
-i++;
-```
-
-更好的注释示例：
-
-```c
-// AD9833 的一次写入固定为 16 bit，这里拆成两个 8 bit 数据交给 HAL SPI 发送。
-tx[0] = (uint8_t)(word >> 8);
-tx[1] = (uint8_t)(word & 0xFFU);
-```
-
-## 模块化状态与建议
-
-当前模块化已经采用 `Output.c/.h` 方案：
-
-1. `ad9833.c/.h` 作为 AD9833 底层驱动，不绑定具体板子的 `hspi1` 或 `PA4`。
-2. `Output.c/.h` 作为比赛应用层输出模块，绑定本板 `SPI1 + PA4 + 25 MHz MCLK`。
-3. `main.c` 只负责系统初始化和调用 `Output_Init()`、`Output_SetWave()`。
-4. 如果后续支持按键、OLED、ADC、PWM、定时器等，也按同样方式独立成模块，不要互相硬耦合。
-
-当前推荐目录形式：
-
-```text
-Core/Inc/ad9833.h      // AD9833 底层驱动接口
-Core/Src/ad9833.c      // AD9833 底层驱动实现
-Core/Src/Output.h      // 比赛应用层输出接口
-Core/Src/Output.c      // 绑定本板 SPI/CS/MCLK 的输出封装
-Core/Src/main.c        // 系统初始化 + 调用 Output 模块
-```
-
-注意：`Output.h` 当前按用户要求放在 `Core/Src` 文件夹中。因为 `main.c` 与 `Output.h` 同目录，当前 Debug 构建可以正常找到该头文件。
-
-## AD9833 驱动理解
-
-`ad9833.c` 当前已经实现：
-
-- `AD9833_Init`：初始化句柄，保存 SPI、FSYNC GPIO、MCLK，并让 AD9833 进入 reset 状态。
-- `AD9833_SetFrequency`：写 `FREQ0` 或 `FREQ1`，内部使用 28 位频率字，先写低 14 位，再写高 14 位。
-- `AD9833_SetPhase`：写 `PHASE0` 或 `PHASE1`，内部使用 12 位相位字。
-- `AD9833_SetWaveform`：支持正弦波和三角波。
-- `AD9833_Start` / `AD9833_Reset`：控制 reset 位。
-- `AD9833_Sleep`：控制休眠位。
-
-当前未实现：
-
-- 方波输出。
-- 幅度控制。AD9833 本身不直接提供数字幅度设置，通常需要外部放大、衰减、电位器、VGA 或 DAC 控制模拟链路。
-- 扫频、调频、按键调参、屏幕显示等比赛常见功能。
-
-如果后续添加方波，要先查 AD9833 数据手册，正确处理 `OPBITEN`、`DIV2`、`MODE` 位，并在注释中说明输出来源和限制。
-
-## 构建与调试
-
-常用构建预设：
-
-```powershell
-cmake --preset Debug
-cmake --build --preset Debug
-```
-
-或：
-
-```powershell
-cmake --preset Release
-cmake --build --preset Release
-```
-
-当前 `.vscode/launch.json` 使用 ST-Link GDB Server 调试。调试前确认：
-
-- ST-Link 已连接。
-- 板卡供电正常。
-- 工程已成功编译生成 `.elf`。
-- AD9833 模块与 STM32 共地。
-
-## 比赛场景下的协作原则
-
-- 用户赶时间时，优先给出能直接复制进工程、能编译、能测波形的代码。
-- 每次修改后说明改了哪些文件、哪些函数、如何调用、如何验证。
-- 对涉及硬件的功能，给出示波器或万用表检查点。
-- 遇到不确定的硬件参数时，代码中使用清晰宏定义，并提醒用户按实际硬件修改。
-- 不随意删除 CubeMX 生成代码，不随意改动启动文件、链接脚本、HAL 驱动源码。
-- 如果修改 CMake，要保持工程仍能用 Debug/Release 预设构建。
-- 如果用户让“封装成模块”，默认同时提供 `.h`、`.c`、CMake 修改和 `main.c` 调用示例。
-
-## 当前后续优先任务建议
-
-Output 模块已经完成并通过 Debug 构建。后续如果继续增强，建议按比赛常见需求推进：
-
-1. 增加按键或串口命令，调用 `Output_SetWave()` 动态切换频率、相位和波形。
-2. 增加 OLED/LCD 显示，把当前频率、相位、波形显示出来。
-3. 如需方波输出，先扩展 `ad9833.c/.h` 的波形枚举和控制位，再在 `Output.c/.h` 增加快捷接口。
-4. 如需扫频，新增独立模块或函数，不要把扫频循环直接塞进 `main.c`。
-5. 每次新增模块后同步更新 `CMakeLists.txt` 并运行 `cmake --build --preset Debug` 验证。
-
+# DDDS 与电赛项目协作备忘
+
+## 用户背景与协作特点
+
+用户正在面向大学生电子设计竞赛积累可复用模块，已经具备 STM32、CubeMX、HAL、
+ADC、DMA、FFT、SPI 和示波器调试经验。用户更需要能落到硬件上的完整方案，而不是
+只给原理或零散代码。
+
+从当前项目可以确认的协作偏好：
+
+- 重视比赛现场快速复用，希望模块复制后只改少量引脚和参数即可运行。
+- 喜欢职责清楚的模块化代码，并希望应用层调用尽量简单。
+- 会用示波器验证最终波形，也会在调试器 Watch 中观察 ADC、FFT、频率和状态变量。
+- 遇到问题时倾向按信号链逐级检查：输入、ADC、DMA、FFT、波形识别、DDS、引脚。
+- 希望直接修改并验证工程，同时需要明确说明 CubeMX 和硬件接线的具体操作。
+- 对算法边界比较敏感，例如会主动考虑谐波重叠导致的三角波误判。
+
+后续协作时不要假定用户缺少基础，也不要只丢一段代码。先读现有工程和引脚配置，
+给出可编译的修改，并说明示波器或 Watch 中应该看到什么。
+
+## 常用主控：STM32F429IGT6
+
+用户常用单片机为 STM32F429IGT6，属于 STM32F4 高性能系列。做方案和估算资源时，
+按具体封装与数据手册再次核对，常用关键点如下：
+
+- 内核：Arm Cortex-M4F，带单精度 FPU 和 DSP 指令，最高主频 180 MHz。
+- 器件宏：STM32F429xx；HAL 入口通常为 stm32f4xx_hal.h。
+- Flash：IG 型号为 2 MB。
+- SRAM：片上 SRAM 总量最高 256 KB，另有 4 KB Backup SRAM；其中包含适合高速数据
+  和 DSP 使用的 CCM RAM，但 DMA 不能直接访问 CCM RAM。
+- 封装：IGT6 通常为 LQFP176；分配引脚时必须以 STM32F429IGT6 对应封装为准。
+- 模拟：3 个 12 位 ADC、2 个 12 位 DAC，适合采集和基础波形链路。
+- 外设资源丰富：多路 SPI/I2S、USART/UART、I2C、定时器、DMA、USB、CAN、FMC、
+  LTDC 和 DMA2D。实际可用数量和引脚复用必须查数据手册与 CubeMX。
+- 系统最高频率配置通常需要正确设置电压等级、PLL、Flash latency，并在 180 MHz
+  配置下启用 Over-Drive。
+
+资源使用注意：
+
+- ADC DMA 缓冲区必须放在 DMA 可访问的 SRAM，不能误放 CCM RAM。
+- FFT 大数组要核对 RAM 占用和栈空间；优先使用静态/全局缓冲区，避免大数组上栈。
+- APB1/APB2 分频会影响定时器时钟，采样率计算不能只看 PCLK 数值。
+- 引脚复用以 CubeMX 和数据手册 AF 表为准，特别注意 SPI、定时器、ADC 和 FMC 冲突。
+- 电赛现场修改系统时钟后，要重新计算 ADC 触发率、SPI 时钟、UART 波特率和定时器。
+
+## 本 DDS 包的硬件约定
+
+本包驱动两片 AD9833：共用 SPI1 SCK/MOSI，各用一个 FSYNC。
+
+- CH1 FSYNC：PA4。
+- CH2 FSYNC：PA3。
+- SPI1 SCK：PA5。
+- SPI1 MOSI：PA7。
+- AD9833 MCLK：默认 25 MHz。
+- SPI：Master、8 bit、MSB first、CPOL High、第一边沿、软件 NSS、分频 16。
+
+需要换板或换引脚时，先修改 DDS_GPIO.c、DDS_SPI.c 顶部宏，再核对 AF 和时钟使能；
+不要把板级引脚判断散落到 DDS.c 的寄存器逻辑中。
+
+## 文件职责和修改边界
+
+- `Inc/DDS.h`：唯一推荐给应用层包含的公开 API。
+- `Src/DDS.c`：AD9833 寄存器、频率字、相位字、双通道状态和对外功能。
+- `Src/DDS_GPIO.c`：FSYNC 引脚定义和 GPIO 操作。
+- `Src/DDS_SPI.c`：SPI 实例、SCK/MOSI 引脚和 SPI 初始化。
+- `README.txt`：必须与真实接线、默认参数和 API 保持同步。
+- `examples/main_usage.c.txt`：调用参考，不直接加入编译，避免与目标工程 main 冲突。
+
+若只更换引脚，优先只改 DDS_GPIO.c 或 DDS_SPI.c。若只更换 MCLK，只改 DDS.c 顶部宏。
+若修改公开函数或波形枚举，必须同步更新 DDS.h、README 和示例。
+
+## 后续电赛工程的开发原则
+
+1. 先画清信号链和时序：信号源 -> 调理 -> ADC -> DMA -> 算法 -> 输出外设。
+2. 先确认实际 MCU、封装、晶振、供电和引脚，再写外设代码。
+3. CubeMX 生成代码尽量放在原位置，用户代码放在 USER CODE 区域，防止重新生成丢失。
+4. 外设驱动返回明确状态；初始化和输出失败不能静默忽略。
+5. 中断只做必要工作和置标志，FFT、DDS 多字写入等较长任务放到主循环或任务中。
+6. 为关键链路保留少量 volatile 调试变量和阶段状态，发布前可通过宏关闭。
+7. 每个模块都要有最小调用示例、默认接线、常改参数和排错顺序。
+8. 修改算法阈值时记录采样率、FFT 点数、频率分辨率、窗函数和测试波形幅度。
+9. 验证不止看“能编译”：还要检查引脚波形、采样率、频率误差、波形失真和边界输入。
+10. 比赛现场优先做小范围、可回退、可测量的改动，不顺手重构无关代码。
+
+## 推荐排错模板
+
+出现“没有波形”时，按下面顺序检查并记录结果：
+
+1. 电源、共地、晶振和复位状态。
+2. 初始化函数及 HAL 返回值。
+3. GPIO/AF 与实际接线。
+4. 定时器或 DMA 是否持续工作。
+5. SPI 的 FSYNC、SCLK、MOSI 是否有正确活动。
+6. 中间变量是否落在合理范围，是否出现饱和、零值或越界。
+7. 输出芯片寄存器字和 MCLK 参数是否正确。
+8. 示波器探头、耦合方式、带宽、量程和负载是否合适。
+
+处理 ADC + FFT + DDS 题目时，建议保留统一状态编号，让 Watch 能直接看到程序停在哪一段；
+同时保留少量原始 ADC 样本、最小值、最大值、均值、FFT 峰值频点、波形类型及 DDS
+返回值。这样即使比赛时间紧，也能快速把问题定位到硬件、采集、算法或输出。
 

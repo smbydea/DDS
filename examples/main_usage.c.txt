@@ -1,0 +1,30 @@
+/* Copy the relevant lines into CubeMX USER CODE sections in main.c. */
+
+#include "DDS.h"
+
+/* Call after HAL_Init() and SystemClock_Config(). */
+static void App_DDS_StartExample(void)
+{
+    if (DDS_Init() != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+    if (DDS_SineChannel(DDS_CHANNEL_1, 1000.0, 0.0) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+    if (DDS_TriangleChannel(DDS_CHANNEL_2, 5000.0, 90.0) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
+
+/* Runtime update examples. */
+static void App_DDS_UpdateExample(void)
+{
+    (void)DDS_SetWaveChannel(DDS_CHANNEL_1, DDS_WAVE_SINE, 20000.0, 0.0);
+    (void)DDS_SetWaveChannel(DDS_CHANNEL_2, DDS_WAVE_TRIANGLE, 10000.0, 0.0);
+}
+
